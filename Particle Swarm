@@ -1,0 +1,87 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn import datasets
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+# Load the Iris dataset
+iris = datasets.load_iris()
+X = iris.data
+y = iris.target
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Objective function to optimize SVM parameters
+def svm_objective_function(params):
+    C, gamma = params[0], params[1]
+    model = SVC(C=C, gamma=gamma)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    return 1 - accuracy  # PSO minimizes the objective function, so we return 1 - accuracy
+
+# Particle class for PSO
+class Particle:
+    def __init__(self, bounds):
+        # Random initial position (C, gamma) within given bounds
+        self.position = np.random.uniform(bounds[0], bounds[1], 2)
+        self.velocity = np.random.uniform(-1, 1, 2)
+        self.best_position = np.copy(self.position)
+        self.best_score = svm_objective_function(self.position)
+        
+    def update_velocity(self, global_best, w=0.5, c1=1.5, c2=1.5):
+        r1, r2 = np.random.rand(), np.random.rand()
+        cognitive = c1 * r1 * (self.best_position - self.position)
+        social = c2 * r2 * (global_best - self.position)
+        self.velocity = w * self.velocity + cognitive + social
+        
+    def update_position(self, bounds):
+        self.position += self.velocity
+        # Keep position within bounds
+        self.position = np.clip(self.position, bounds[0], bounds[1])
+        # Update personal best if the current score is better
+        score = svm_objective_function(self.position)
+        if score < self.best_score:
+            self.best_score = score
+            self.best_position = np.copy(self.position)
+
+# PSO Algorithm
+def pso(func, bounds, swarm_size=30, max_iter=100):
+    swarm = [Particle(bounds) for _ in range(swarm_size)]
+    global_best = min(swarm, key=lambda p: p.best_score).best_position
+    global_best_score = func(global_best)
+    history = []
+
+    for iteration in range(max_iter):
+        for particle in swarm:
+            particle.update_velocity(global_best)
+            particle.update_position(bounds)
+        current_best = min(swarm, key=lambda p: p.best_score)
+        if current_best.best_score < global_best_score:
+            global_best = np.copy(current_best.best_position)
+            global_best_score = current_best.best_score
+        history.append(global_best_score)
+        print(f"Iteration {iteration+1}: Best Score = {global_best_score:.4f}")
+    
+    return global_best, 1 - global_best_score, history
+
+# PSO parameters
+bounds = [0.1, 100]  # C bounds
+gamma_bounds = [0.0001, 1]  # Gamma bounds
+combined_bounds = [bounds, gamma_bounds]
+
+# Run PSO to optimize C and gamma
+best_params, best_accuracy, history = pso(svm_objective_function, combined_bounds, swarm_size=30, max_iter=50)
+
+print(f"Best Parameters: C={best_params[0]}, Gamma={best_params[1]}")
+print(f"Best Accuracy: {best_accuracy * 100:.2f}%")
+
+# Plot convergence (accuracy improvement over iterations)
+plt.plot(history)
+plt.xlabel('Iteration')
+plt.ylabel('Best Accuracy')
+plt.title('PSO Convergence for SVM Hyperparameter Tuning')
+plt.grid(True)
+plt.show()
