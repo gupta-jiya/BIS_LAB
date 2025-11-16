@@ -1,0 +1,97 @@
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
+
+# Load dataset
+data = load_breast_cancer()
+X, y = data.data, data.target
+n_features = X.shape[1]
+
+# Fitness function: accuracy with penalty for number of features
+def fitness_function(position):
+    # Position is a vector with values between 0 and 1
+    # Threshold to decide selected features
+    selected_features = position > 0.5
+    if np.sum(selected_features) == 0:  # Avoid empty feature set
+        return 0
+
+    X_selected = X[:, selected_features]
+    model = LogisticRegression(max_iter=1000, solver='liblinear')
+    accuracy = cross_val_score(model, X_selected, y, cv=5).mean()
+    
+    # Penalize large feature subsets (to encourage fewer features)
+    penalty = (np.sum(selected_features) / n_features)
+    return accuracy * (1 - penalty * 0.1)  # Balance accuracy and subset size
+
+# GWO parameters
+num_wolves = 20
+max_iter = 30
+
+# Initialize wolves' positions randomly between 0 and 1
+wolves = np.random.rand(num_wolves, n_features)
+
+# Initialize alpha, beta, delta wolves
+alpha_pos = np.zeros(n_features)
+alpha_score = -np.inf
+
+beta_pos = np.zeros(n_features)
+beta_score = -np.inf
+
+delta_pos = np.zeros(n_features)
+delta_score = -np.inf
+
+# Main GWO loop
+for t in range(max_iter):
+    for i in range(num_wolves):
+        fitness = fitness_function(wolves[i])
+
+        # Update alpha, beta, delta
+        if fitness > alpha_score:
+            alpha_score = fitness
+            alpha_pos = wolves[i].copy()
+        elif fitness > beta_score:
+            beta_score = fitness
+            beta_pos = wolves[i].copy()
+        elif fitness > delta_score:
+            delta_score = fitness
+            delta_pos = wolves[i].copy()
+
+    a = 2 - t * (2 / max_iter)  # Decrease linearly from 2 to 0
+
+    # Update position of each wolf
+    for i in range(num_wolves):
+        for j in range(n_features):
+            r1 = np.random.rand()
+            r2 = np.random.rand()
+
+            A1 = 2 * a * r1 - a
+            C1 = 2 * r2
+            D_alpha = abs(C1 * alpha_pos[j] - wolves[i][j])
+            X1 = alpha_pos[j] - A1 * D_alpha
+
+            r1 = np.random.rand()
+            r2 = np.random.rand()
+            A2 = 2 * a * r1 - a
+            C2 = 2 * r2
+            D_beta = abs(C2 * beta_pos[j] - wolves[i][j])
+            X2 = beta_pos[j] - A2 * D_beta
+
+            r1 = np.random.rand()
+            r2 = np.random.rand()
+            A3 = 2 * a * r1 - a
+            C3 = 2 * r2
+            D_delta = abs(C3 * delta_pos[j] - wolves[i][j])
+            X3 = delta_pos[j] - A3 * D_delta
+
+            wolves[i][j] = (X1 + X2 + X3) / 3
+
+        # Keep positions within [0,1]
+        wolves[i] = np.clip(wolves[i], 0, 1)
+
+    print(f"Iteration {t+1}/{max_iter}, Best fitness: {alpha_score:.4f}")
+
+# Final selected features
+selected_features = alpha_pos > 0.5
+print(f"Selected features indices: {np.where(selected_features)[0]}")
+print(f"Number of selected features: {np.sum(selected_features)}")
