@@ -1,0 +1,66 @@
+import numpy as np
+from random import sample, randint
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+# Parameters
+num_nests = 20
+num_genes = 1000        # Total genes available
+subset_size = 10       # Number of genes to select per subset (nest)
+pa = 0.25               # Probability of abandoning nests
+max_iterations = 50
+num_samples = 200       # Number of samples in synthetic data
+num_clusters = 3        # Number of clusters for KMeans
+
+# Generate synthetic gene expression data (samples x genes)
+np.random.seed(42)
+data = np.random.rand(num_samples, num_genes)
+
+# Initialize nests: each nest is a random subset of genes
+nests = [sample(range(num_genes), subset_size) for _ in range(num_nests)]
+
+def fitness(gene_subset, data):
+    subset_data = data[:, gene_subset]
+    clusters = KMeans(n_clusters=num_clusters, random_state=42).fit_predict(subset_data)
+    score = silhouette_score(subset_data, clusters)
+    return score
+
+# Evaluate fitness of initial nests
+fitness_scores = [fitness(nest, data) for nest in nests]
+
+for iteration in range(max_iterations):
+
+    for i in range(num_nests):
+        # Generate new solution via simple swap mutation (like Lévy flight simplified)
+        new_subset = nests[i][:]
+        gene_out = randint(0, subset_size - 1)
+        gene_in = randint(0, num_genes - 1)
+        new_subset[gene_out] = gene_in
+
+        new_fitness = fitness(new_subset, data)
+
+        # Replace if new solution is better
+        if new_fitness > fitness_scores[i]:
+            nests[i] = new_subset
+            fitness_scores[i] = new_fitness
+
+    # Abandon worst nests and replace with new random subsets
+    num_abandon = int(pa * num_nests)
+    worst_indices = sorted(range(len(fitness_scores)), key=lambda k: fitness_scores[k])[:num_abandon]
+
+    for idx in worst_indices:
+        nests[idx] = sample(range(num_genes), subset_size)
+        fitness_scores[idx] = fitness(nests[idx], data)
+
+    # Print progress
+    best_current_fitness = max(fitness_scores)
+    print(f"Iteration {iteration+1}: Best clustering score = {best_current_fitness:.4f}")
+
+# Output best gene subset and its fitness
+best_idx = fitness_scores.index(max(fitness_scores))
+best_genes = nests[best_idx]
+best_score = fitness_scores[best_idx]
+
+print("\nBest gene subset found:")
+print(best_genes)
+print(f"Best clustering silhouette score: {best_score:.4f}")
